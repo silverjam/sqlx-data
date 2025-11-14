@@ -1,0 +1,61 @@
+[workspace]
+resolver = "2"
+members = [
+    "sqlx-data",
+    "sqlx-data-macros",
+    "sqlx-data-params",
+    "sqlx-data-parser",
+    "sqlx-data-integration",
+    # Integration tests - not published to crates.io
+    "test-integration-sqlite",
+    #"test-integration-mysql",
+    # "test-integration-postgresql",
+]
+default-members = ["sqlx-data"]
+
+# Exclude test packages from crates.io publishing
+exclude = [
+    "test-integration-*"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Jose Carmo <jose.rcarmo@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/jose.rcarmo/sqlx-data"
+homepage = "https://github.com/jose.rcarmo/sqlx-data"
+documentation = "https://docs.rs/sqlx-data"
+description = "An advanced SQLx companion implementing the Repository Pattern with compile-time type safety. Features boilerplate-free parameter binding, sophisticated pagination (Serial/Slice/Cursor), query aliases, scopes, batch operations, and streaming support for modern Rust applications."
+keywords = ["sqlx", "repository", "orm", "macros", "pagination"]
+
+[workspace.dependencies]
+sqlx = { version = "0.8", default-features = false }
+serde = { version = "1.0", default-features = false, features = ["derive","std"] }
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
+log = "0.4"
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2.0", features = ["full", "extra-traits"] }
+base64 = "0.22"
+prettyplease = "0.2"
+sqlparser = { version = "0.60.0", default-features = false, features = ["std"] }
+fancy-regex = "0.17"
+tracing = { version = "0.1" }
+moka = { version = "0.12", features = ["sync"] }
+dashmap = "6.1"
+ahash = "0.8"
+futures = { version = "0.3" }
+thiserror = "2.0.17"
+sqlx-data = { path = "sqlx-data" }
+sqlx-data-params = { path = "sqlx-data-params" }
+sqlx-data-parser = { path = "sqlx-data-parser" }
+sqlx-data-macros = { path = "sqlx-data-macros" }
+sqlx-data-integration = { path = "sqlx-data-integration" }
+
+
+# Dev dependencies
+bytes = "1.11"
+tokio = { version = "1.49", features = ["rt-multi-thread", "macros"] }
+tempfile = "3.24"
+tracing-subscriber = { version = "0.3", default-features = false }
