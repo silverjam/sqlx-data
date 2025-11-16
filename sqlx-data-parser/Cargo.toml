@@ -1,0 +1,51 @@
+[package]
+name = "sqlx-data-parser"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "SQL parsing and dynamic query building for sqlx-data - AST manipulation, query transformation, pagination injection, and compile-time SQL validation"
+license.workspace = true
+repository.workspace = true
+keywords = ["sql", "parsing", "query", "data", "builder"]
+categories = ["database"]
+
+[dependencies]
+sqlparser = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+sqlx-data-params = { workspace = true, optional = true }
+#sqlx-data-integration = { workspace = true, optional = true}
+
+#Cache
+moka = { workspace = true }
+dashmap = { workspace = true }
+ahash = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[features]
+default = []
+
+# Database features
+sqlite = ["sqlx-data-params/sqlite"]
+postgres = ["sqlx-data-params/postgres"]
+mysql = ["sqlx-data-params/mysql"]
+
+# JSON support
+json = ["sqlx-data-params?/json"]
+uuid = ["sqlx-data-params?/uuid"]
+chrono = ["sqlx-data-params?/chrono"]
+time = ["sqlx-data-params?/time"]
+bigdecimal = ["sqlx-data-params?/bigdecimal"]
+rust_decimal = ["sqlx-data-params?/rust_decimal"]
+bit-vec = ["sqlx-data-params?/bit-vec"]
+ipnet = ["sqlx-data-params?/ipnet"]
+ipnetwork = ["sqlx-data-params?/ipnetwork"]
+mac_address = ["sqlx-data-params?/mac_address"]
+bstr = ["sqlx-data-params?/bstr"]
+regexp = ["sqlx-data-params?/regexp"]
+
+# TLS features
+tls-rustls = ["sqlx-data-params?/tls-rustls"]
+tls-native-tls = ["sqlx-data-params?/tls-native-tls"]
