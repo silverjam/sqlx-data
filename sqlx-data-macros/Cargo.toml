@@ -1,0 +1,48 @@
+[package]
+name = "sqlx-data-macros"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Procedural macros for sqlx-data - #[repo] and #[dml] derive macros with automatic SQL generation, repository pattern, data access layer, and compile-time query validation"
+keywords = ["macros", "repository", "derive", "data", "sql"]
+categories = ["database", "development-tools::procedural-macro-helpers"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true }
+log = { workspace = true }
+prettyplease = { workspace = true }
+sqlparser = { workspace = true } #TODO Refactorig to remove from here!
+fancy-regex = { workspace = true }
+sqlx-data-parser = { workspace = true }
+
+[features]
+default = []
+
+sqlite = ["sqlx-data-parser/sqlite"]
+postgres = ["sqlx-data-parser/postgres"]
+mysql = ["sqlx-data-parser/mysql"]
+
+tracing = []
+json = ["sqlx-data-parser/json"]
+uuid = ["sqlx-data-parser/uuid"]
+chrono = ["sqlx-data-parser/chrono"]
+time = ["sqlx-data-parser/time"]
+bigdecimal = ["sqlx-data-parser/bigdecimal"]
+rust_decimal = ["sqlx-data-parser/rust_decimal"]
+bit-vec = ["sqlx-data-parser/bit-vec"]
+ipnet = ["sqlx-data-parser/ipnet"]
+ipnetwork = ["sqlx-data-parser/ipnetwork"]
+mac_address = ["sqlx-data-parser/mac_address"]
+bstr = ["sqlx-data-parser/bstr"]
+regexp = ["sqlx-data-parser/regexp"]
+tls-rustls = ["sqlx-data-parser/tls-rustls"]
+tls-native-tls = ["sqlx-data-parser/tls-native-tls"]
+
+
