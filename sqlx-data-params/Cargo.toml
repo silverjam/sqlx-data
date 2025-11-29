@@ -1,0 +1,48 @@
+[package]
+name = "sqlx-data-params"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Data parameter utilities for SQLx-Data - advanced pagination (Serial/Slice/Cursor), dynamic filtering, sorting, and type-safe query parameters for database operations"
+license.workspace = true
+repository.workspace = true
+keywords = ["pagination", "parameters", "filtering", "sorting", "database"]
+categories = ["data-structures"]
+
+[dependencies]
+log = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true, optional = true }
+sqlx-data-integration = { workspace = true, optional = true }
+
+[dev-dependencies]
+
+# Always enable json feature in tests
+# [dev-dependencies.sqlx-data-params]
+# path = "."
+# features = ["sqlite","json"]
+
+[features]
+default = []
+
+# Database features
+sqlite = ["dep:sqlx-data-integration", "sqlx-data-integration/sqlite"]
+postgres = ["dep:sqlx-data-integration", "sqlx-data-integration/postgres"]
+mysql = ["dep:sqlx-data-integration", "sqlx-data-integration/mysql"]
+
+json = ["dep:serde", "sqlx-data-integration?/json"]
+uuid = ["sqlx-data-integration?/uuid"]
+chrono = ["sqlx-data-integration?/chrono"]
+time = ["sqlx-data-integration?/time"]
+bigdecimal = ["sqlx-data-integration?/bigdecimal"]
+rust_decimal = ["sqlx-data-integration?/rust_decimal"]
+bit-vec = ["sqlx-data-integration?/bit-vec"]
+ipnet = ["sqlx-data-integration?/ipnet"]
+ipnetwork = ["sqlx-data-integration?/ipnetwork"]
+mac_address = ["sqlx-data-integration?/mac_address"]
+bstr = ["sqlx-data-integration?/bstr"]
+regexp = ["sqlx-data-integration?/regexp"]
+
+# TLS features
+tls-rustls = ["sqlx-data-integration?/tls-rustls"]
+tls-native-tls = ["sqlx-data-integration?/tls-native-tls"]
