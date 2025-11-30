@@ -1,0 +1,41 @@
+[package]
+name = "sqlx-data-integration"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Integration utilities and helpers for sqlx-data - connection pooling, executor abstractions, and SQLx integration layer"
+keywords = ["sqlx", "integration", "database", "pool", "executor"]
+categories = ["database"]
+
+[dependencies]
+sqlx = { workspace = true, optional = true }
+
+[dev-dependencies]
+
+[features]
+default = []
+
+# Database features
+sqlite = ["dep:sqlx", "sqlx/sqlite"]
+postgres = ["dep:sqlx", "sqlx/postgres"]
+mysql = ["dep:sqlx", "sqlx/mysql"]
+
+# Type features
+uuid = ["sqlx?/uuid"]
+json = ["sqlx?/json"]
+chrono = ["sqlx?/chrono"]
+time = ["sqlx?/time"]
+bigdecimal = ["sqlx?/bigdecimal"]
+rust_decimal = ["sqlx?/rust_decimal"]
+bit-vec = ["sqlx?/bit-vec"]
+ipnet = ["sqlx?/ipnet"]
+ipnetwork = ["sqlx?/ipnetwork"]
+mac_address = ["sqlx?/mac_address"]
+bstr = ["sqlx?/bstr"]
+regexp = ["sqlx?/regexp"]
+
+# TLS features
+tls-rustls = ["sqlx?/tls-rustls"]
+tls-native-tls = ["sqlx?/tls-native-tls"]
