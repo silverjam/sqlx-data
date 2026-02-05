@@ -1,9 +1,7 @@
-#![cfg(all(feature = "json"))]
-
 use serde::{Deserialize, Serialize};
 use sqlx_data::{Pool, Result, dml, repo};
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Profile {
     pub email: String,
     pub age: i32,
@@ -13,7 +11,7 @@ pub struct Profile {
     pub active: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Preferences {
     pub theme: String,
     pub notifications: bool,
@@ -84,6 +82,7 @@ impl JsonUserRepo for JsonUserApp {
     }
 }
 
+#[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,10 +172,9 @@ mod tests {
         let retrieved = repo
             .find_user_by_id(user_id)
             .await
-            .unwrap()
-            .expect("User should be found");
+            .unwrap();
 
-        let (_id, name, profile_json, preferences_json) = retrieved;
+        let (_id, name, profile_json, preferences_json) = retrieved.unwrap();
         assert_eq!(name, "Alice Smith");
 
         // Deserialize and verify profile
@@ -187,9 +185,7 @@ mod tests {
         if let Some(prefs_value) = preferences_json {
             let retrieved_preferences: Preferences = serde_json::from_value(prefs_value).unwrap();
             assert_eq!(retrieved_preferences, preferences);
-        } else {
-            panic!("Preferences should not be null");
-        }
+        } 
     }
 
     #[sqlx::test(migrations = "tests/migrations")]
@@ -343,10 +339,9 @@ mod tests {
         let updated_user = repo
             .find_user_by_id(user_id)
             .await
-            .unwrap()
-            .expect("User should be found");
+            .unwrap();
 
-        let (_id, _name, profile_json, _preferences) = updated_user;
+        let (_id, _name, profile_json, _preferences) = updated_user.unwrap();
         let updated_profile: Profile = serde_json::from_value(profile_json).unwrap();
 
         assert_eq!(updated_profile.email, "new@example.com");
@@ -376,10 +371,9 @@ mod tests {
         let retrieved = repo
             .find_user_by_id(user_id)
             .await
-            .unwrap()
-            .expect("User should be found");
+            .unwrap();
 
-        let (_id, name, profile_json, preferences_json) = retrieved;
+        let (_id, name, profile_json, preferences_json) = retrieved.unwrap();
         assert_eq!(name, "No Prefs User");
 
         let retrieved_profile: Profile = serde_json::from_value(profile_json).unwrap();

@@ -1,15 +1,19 @@
 use crate::{IntoParams, Params};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum SortDirection {
+    #[default]
     Asc,
     Desc,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum NullOrdering {
     First,
     Last,
+    #[default]
     Default,
 }
 
@@ -40,11 +44,6 @@ impl SortDirection {
     }
 }
 
-impl Default for SortDirection {
-    fn default() -> Self {
-        Self::Asc
-    }
-}
 
 impl NullOrdering {
     /// Returns Some(true) for First, Some(false) for Last, None for Default
@@ -72,11 +71,6 @@ impl NullOrdering {
     }
 }
 
-impl Default for NullOrdering {
-    fn default() -> Self {
-        Self::Default
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct Sort {

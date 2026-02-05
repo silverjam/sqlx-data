@@ -92,6 +92,7 @@ impl UserRepo for TestApp {
     }
 }
 
+#[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,7 +230,7 @@ mod tests {
         assert!(avg_age.is_some());
         let avg = avg_age.unwrap();
         // Should be around 30 based on our test data
-        assert!(avg > BigDecimal::from(25) && avg < BigDecimal::from(35));
+        assert!(avg > 25 && avg < 35);
     }
 
     #[sqlx::test(

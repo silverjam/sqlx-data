@@ -18,6 +18,17 @@ trait UserRepo {
     async fn find_all_builder(&self, params: impl IntoParams) -> Result<Serial<User>>;
 }
 
+struct TestUserRepo<'a> {
+    pool: &'a Pool,
+}
+
+impl UserRepo for TestUserRepo<'_> {
+    fn get_pool(&self) -> &Pool {
+        self.pool
+    }
+}
+
+#[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -61,15 +72,5 @@ mod tests {
             "Serial params with builder works! Page: {}, Size: {}, Total: {}, Pages: {}",
             page.page, page.size, page.total_items, page.total_pages
         );
-    }
-}
-
-struct TestUserRepo<'a> {
-    pool: &'a Pool,
-}
-
-impl UserRepo for TestUserRepo<'_> {
-    fn get_pool(&self) -> &Pool {
-        self.pool
     }
 }

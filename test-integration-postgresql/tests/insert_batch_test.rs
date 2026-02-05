@@ -64,7 +64,7 @@ trait BatchInsertRepo {
 
     // Count users
     #[dml("SELECT COUNT(*) FROM users")]
-    async fn count_users(&self) -> Result<i64>;
+    async fn count_users(&self) -> Result<Option<i64>>;
 
     // Clean up for tests
     #[dml("DELETE FROM users WHERE id >= $1")]
@@ -81,6 +81,7 @@ impl BatchInsertRepo for BatchApp {
     }
 }
 
+#[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,7 +94,7 @@ mod tests {
         let app = BatchApp { pool };
 
         // Count initial users
-        let initial_count = app.count_users().await.unwrap();
+        let initial_count = app.count_users().await.unwrap().unwrap_or(0);
 
         // Prepare batch data
         let batch_data = vec![
@@ -107,7 +108,7 @@ mod tests {
         assert_eq!(inserted_ids.len(), 3);
 
         // Verify count increased
-        let final_count = app.count_users().await.unwrap();
+        let final_count = app.count_users().await.unwrap().unwrap_or(0);
         assert_eq!(final_count, initial_count + 3);
 
         // Get the first inserted ID (PostgreSQL way - from RETURNING)
@@ -153,7 +154,7 @@ mod tests {
     async fn test_batch_vs_single_insert_performance(pool: Pool) {
         let app = BatchApp { pool };
 
-        let initial_count = app.count_users().await.unwrap();
+        let initial_count = app.count_users().await.unwrap().unwrap_or(0);
 
         // Single inserts
         let start = std::time::Instant::now();
@@ -167,7 +168,7 @@ mod tests {
         }
         let single_duration = start.elapsed();
 
-        let mid_count = app.count_users().await.unwrap();
+        let mid_count = app.count_users().await.unwrap().unwrap_or(0);
         assert_eq!(mid_count, initial_count + 5);
 
         // Batch insert
@@ -184,7 +185,7 @@ mod tests {
         let _inserted_ids = app.insert_users_auto_id(batch_data).await.unwrap();
         let batch_duration = start.elapsed();
 
-        let final_count = app.count_users().await.unwrap();
+        let final_count = app.count_users().await.unwrap().unwrap_or(0);
         assert_eq!(final_count, initial_count + 10);
 
         // Batch should be faster (or at least not significantly slower)
@@ -199,14 +200,14 @@ mod tests {
     async fn test_batch_insert_empty_vec(pool: Pool) {
         let app = BatchApp { pool };
 
-        let initial_count = app.count_users().await.unwrap();
+        let initial_count = app.count_users().await.unwrap().unwrap_or(0);
 
         // Insert empty batch
         let inserted_ids = app.insert_users_auto_id(vec![]).await.unwrap();
         assert_eq!(inserted_ids.len(), 0);
 
         // Count should remain the same
-        let final_count = app.count_users().await.unwrap();
+        let final_count = app.count_users().await.unwrap().unwrap_or(0);
         assert_eq!(final_count, initial_count);
     }
 
@@ -269,12 +270,12 @@ mod tests {
     async fn test_batch_insert_transaction_rollback(pool: Pool) {
         let app = BatchApp { pool: pool.clone() };
 
-        let initial_count = app.count_users().await.unwrap();
+        let initial_count = app.count_users().await.unwrap().unwrap_or(0);
 
         // Simulate transaction failure
         let mut tx = pool.begin().await.unwrap();
 
-        let batch_data = vec![
+        let batch_data = [
             ("TX User 1".to_string(), "tx1@example.com".to_string(), 25, Some(1998)),
             ("TX User 2".to_string(), "tx2@example.com".to_string(), 30, Some(1993)),
         ];
@@ -292,7 +293,7 @@ mod tests {
         tx.rollback().await.unwrap();
 
         // Verify no rows were committed
-        let final_count = app.count_users().await.unwrap();
+        let final_count = app.count_users().await.unwrap().unwrap_or(0);
         assert_eq!(final_count, initial_count);
     }
 
@@ -303,7 +304,7 @@ mod tests {
     async fn test_large_batch_insert(pool: Pool) {
         let app = BatchApp { pool };
 
-        let initial_count = app.count_users().await.unwrap();
+        let initial_count = app.count_users().await.unwrap().unwrap_or(0);
 
         // Create a larger batch (100 users)
         let batch_data: Vec<_> = (0..100).map(|i| {
@@ -318,7 +319,7 @@ mod tests {
         let inserted_ids = app.insert_users_auto_id(batch_data).await.unwrap();
         assert_eq!(inserted_ids.len(), 100);
 
-        let final_count = app.count_users().await.unwrap();
+        let final_count = app.count_users().await.unwrap().unwrap_or(0);
         assert_eq!(final_count, initial_count + 100);
 
         // Verify some of the inserted data
@@ -329,7 +330,7 @@ mod tests {
         // Clean up the large batch
         app.cleanup_users(first_id).await.unwrap();
 
-        let cleanup_count = app.count_users().await.unwrap();
+        let cleanup_count = app.count_users().await.unwrap().unwrap_or(0);
         assert_eq!(cleanup_count, initial_count);
     }
 }

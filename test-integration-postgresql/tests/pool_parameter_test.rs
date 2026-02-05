@@ -1,4 +1,4 @@
-use sqlx_data::{Pool, Result, dml};
+use sqlx_data::{Connection, Executor, Pool, QueryResult, Result, Transaction, dml};
 
 #[derive(Clone, PartialEq, Eq, Debug, sqlx::Type)]
 #[sqlx(transparent)]
@@ -23,11 +23,11 @@ pub struct User {
 #[sqlx_data::repo]
 trait UserPoolRepo {
     // Method without pool parameter (uses get_pool())
-    #[dml("SELECT COUNT(*) FROM users")]
+    #[dml("SELECT COUNT(*) as \"count!: i64\" FROM users")]
     async fn count_users(&self) -> Result<i64>;
 
     // Method with pool parameter (uses provided pool)
-    #[dml("SELECT COUNT(*) FROM users")]
+    #[dml("SELECT COUNT(*) as \"count!: i64\" FROM users")]
     async fn count_users_with_pool(&self, pool: &Pool) -> Result<i64>;
 
     // Method with both query params and pool param
@@ -39,7 +39,7 @@ trait UserPoolRepo {
     async fn get_user_info_with_pool(&self, id: i64, pool: &Pool) -> Result<(String, i16)>;
 
     // Connection parameters
-    #[dml("SELECT COUNT(*) FROM users")]
+    #[dml("SELECT COUNT(*) as \"count!: i64\" FROM users")]
     async fn count_users_with_connection(&self, conn: &mut sqlx::PgConnection) -> Result<i64>;
 
     #[dml("SELECT id as \"id!: Id\", name, email, age FROM users WHERE id = $1")]
@@ -50,7 +50,7 @@ trait UserPoolRepo {
     ) -> Result<User>;
 
     // Transaction parameters
-    #[dml("SELECT COUNT(*) FROM users")]
+    #[dml("SELECT COUNT(*) as \"count!: i64\" FROM users")]
     async fn count_users_with_transaction(
         &self,
         tx: &mut Transaction<'_>,
@@ -101,6 +101,7 @@ impl UserPoolRepo for MyPoolApp {
     }
 }
 
+#[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use super::*;

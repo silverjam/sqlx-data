@@ -74,11 +74,11 @@ impl CursorSecureExtract for User {
 trait UserPoolRepo {
     // Method without pool parameter (uses get_pool())
     #[dml("SELECT COUNT(*) FROM users")]
-    async fn count_users(&self) -> Result<i64>;
+    async fn count_users(&self) -> Result<Option<i64>>;
 
     // Method with pool parameter (uses provided pool)
     #[dml("SELECT COUNT(*) FROM users")]
-    async fn count_users_with_pool(&self, pool: &Pool) -> Result<i64>;
+    async fn count_users_with_pool(&self, pool: &Pool) -> Result<Option<i64>>;
 
     // Method with both query params and pool param
     #[dml("SELECT id, name, email, age FROM users WHERE id = $1")]
@@ -90,14 +90,14 @@ trait UserPoolRepo {
 
     // Connection parameters
     #[dml("SELECT COUNT(*) FROM users")]
-    async fn count_users_with_connection(&self, conn: &mut Connection) -> Result<i64>;
+    async fn count_users_with_connection(&self, conn: &mut Connection) -> Result<Option<i64>>;
 
     #[dml("SELECT id, name, email, age FROM users WHERE id = $1")]
     async fn find_by_id_with_connection(&self, id: i64, conn: &mut Connection) -> Result<User>;
 
     // Transaction parameters
     #[dml("SELECT COUNT(*) FROM users")]
-    async fn count_users_with_transaction(&self, tx: &mut Transaction<'_>) -> Result<i64>;
+    async fn count_users_with_transaction(&self, tx: &mut Transaction<'_>) -> Result<Option<i64>>;
 
     #[dml("SELECT id, name, email, age FROM users WHERE id = $1")]
     async fn find_by_id_with_transaction(
@@ -194,6 +194,7 @@ impl UserPoolRepo for MyPoolApp {
     }
 }
 
+#[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,7 +207,7 @@ mod tests {
     async fn test_count_without_pool(pool: Pool) {
         let repo = MyPoolApp { pool };
 
-        let count = repo.count_users().await.unwrap();
+        let count = repo.count_users().await.unwrap().unwrap_or(0);
         assert_eq!(count, 20); // From fixtures
     }
 
@@ -219,7 +220,7 @@ mod tests {
             pool: pool.clone(),
         };
 
-        let count = repo.count_users_with_pool(&pool).await.unwrap();
+        let count = repo.count_users_with_pool(&pool).await.unwrap().unwrap_or(0);
         assert_eq!(count, 20); // From fixtures
     }
 
@@ -282,7 +283,7 @@ mod tests {
         let app = AppWithoutPool;
 
         // This should work because it uses pool parameter, not get_pool()
-        let count = app.count_users_with_pool(&pool).await.unwrap();
+        let count = app.count_users_with_pool(&pool).await.unwrap().unwrap_or(0);
         assert_eq!(count, 20);
     }
 
@@ -297,7 +298,7 @@ mod tests {
         let mut tx = pool.begin().await.unwrap();
 
         // Use transaction parameter directly - the macro should handle &mut *tx automatically
-        let count = app.count_users_with_transaction(&mut tx).await.unwrap();
+        let count = app.count_users_with_transaction(&mut tx).await.unwrap().unwrap_or(0);
         assert_eq!(count, 20);
 
         let user = app.find_by_id_with_transaction(1, &mut tx).await.unwrap();
@@ -317,7 +318,7 @@ mod tests {
 
         let mut conn = pool.acquire().await.unwrap();
 
-        let count = app.count_users_with_connection(&mut conn).await.unwrap();
+        let count = app.count_users_with_connection(&mut conn).await.unwrap().unwrap_or(0);
         assert_eq!(count, 20);
 
         let user = app.find_by_id_with_connection(2, &mut conn).await.unwrap();
@@ -332,7 +333,7 @@ mod tests {
         let app = AppWithoutPool;
 
         let mut conn = pool.acquire().await.unwrap();
-        let count = app.count_users_with_connection(&mut conn).await.unwrap();
+        let count = app.count_users_with_connection(&mut conn).await.unwrap().unwrap_or(0);
         assert_eq!(count, 20);
     }
 

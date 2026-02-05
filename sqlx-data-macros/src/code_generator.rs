@@ -1041,11 +1041,6 @@ impl FetchCallGenerator {
             return ParamWrapper::BytesToVec;
         }
 
-        // Check json flag FIRST - only apply Json decoration if explicitly requested
-        if method.is_json_query {
-            return ParamWrapper::Json;
-        }
-
         // Scalars -> no decoration
         if let syn::Type::Path(type_path) = param_type
             && TypeAnalyzer::is_scalar(&type_path.path).unwrap_or(false)
@@ -1056,7 +1051,7 @@ impl FetchCallGenerator {
         // String references -> no decoration
         if let syn::Type::Reference(type_ref) = param_type {
             let syn::Type::Path(type_path) = &*type_ref.elem else {
-                return ParamWrapper::None; // No Json unless json flag is set
+                return ParamWrapper::None;
             };
             if TypeAnalyzer::path_ends_with(&type_path.path, "str")
                 || TypeAnalyzer::path_ends_with(&type_path.path, "String")
@@ -1065,13 +1060,37 @@ impl FetchCallGenerator {
             }
         }
 
+        // serde_json::Value / JsonValue are already JSON-compatible, no wrapper needed
+        if let syn::Type::Path(type_path) = param_type
+            && (TypeAnalyzer::path_ends_with(&type_path.path, "Value")
+                || TypeAnalyzer::path_ends_with(&type_path.path, "JsonValue"))
+            {
+                return ParamWrapper::None;
+            }
+
+        // Check json flag - only apply Json decoration to non-scalar, non-json types (structs)
+        if method.is_json_query {
+            return ParamWrapper::Json;
+        }
+
         ParamWrapper::None
     }
 
     /// Apply wrapper to a base type
     fn apply_wrapper_to_type(param_type: &syn::Type, wrapper: ParamWrapper) -> syn::Type {
         match wrapper {
-            ParamWrapper::Json => syn::parse_quote! { sqlx::types::Json<#param_type> },
+            ParamWrapper::Json => {
+                // PostgreSQL JSONB requires serde_json::Value for compile-time checked queries
+                #[cfg(feature = "postgres")]
+                {
+                    syn::parse_quote! { serde_json::Value }
+                }
+                // MySQL and others work with Json<T>
+                #[cfg(not(feature = "postgres"))]
+                {
+                    syn::parse_quote! { sqlx::types::Json<#param_type> }
+                }
+            }
             ParamWrapper::BytesToVec => syn::parse_quote! { Vec<u8> },
             ParamWrapper::None => param_type.clone(),
         }
@@ -1189,7 +1208,18 @@ impl FetchCallGenerator {
 
         let wrapper = Self::get_base_wrapper(param_type, method);
         match wrapper {
-            ParamWrapper::Json => quote! { sqlx::types::Json(#call_expr) },
+            ParamWrapper::Json => {
+                // PostgreSQL JSONB requires serde_json::Value
+                #[cfg(feature = "postgres")]
+                {
+                    quote! { serde_json::to_value(&#call_expr).expect("JSON serialization failed") }
+                }
+                // MySQL and others work with Json<T>
+                #[cfg(not(feature = "postgres"))]
+                {
+                    quote! { sqlx::types::Json(#call_expr) }
+                }
+            }
             ParamWrapper::BytesToVec => quote! { #call_expr.to_vec() },
             ParamWrapper::None => call_expr.clone(),
         }

@@ -1,4 +1,3 @@
-#![cfg(all(feature = "json"))]
 use sqlx_data::{
     Cursor, CursorData, CursorError, CursorSecureExtract, CursorValue, FilterValue, IntoParams, Pool, Result, dml, repo,
 };
@@ -63,6 +62,18 @@ trait UserRepo {
     async fn find_all(&self, params: impl IntoParams) -> Result<Cursor<User>>;
 }
 
+
+struct TestUserRepo<'a> {
+    pool: &'a Pool,
+}
+
+impl<'a> UserRepo for TestUserRepo<'a> {
+    fn get_pool(&self) -> &Pool {
+        self.pool
+    }
+}
+
+#[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use sqlx_data::ParamsBuilder;
@@ -133,7 +144,7 @@ mod tests {
         println!("Second page from encoded cursor: {:?}", second_page);
 
         // Should get next set of users
-        assert!(second_page.data.len() > 0);
+        assert!(!second_page.data.is_empty());
         assert!(second_page.data[0].id > first_page.data.last().unwrap().id);
     }
 
@@ -204,7 +215,7 @@ mod tests {
         let page = repo.find_all(params).await.unwrap();
 
         // Should return first page with default cursor behavior
-        assert!(page.data.len() > 0);
+        assert!(!page.data.is_empty());
         assert_eq!(page.per_page, 3);
     }
 
@@ -519,7 +530,7 @@ mod tests {
         assert!(result.is_ok(), "PostgreSQL collation should work: {}", result.err().unwrap());
 
         let page = result.unwrap();
-        assert!(page.data.len() > 0);
+        assert!(!page.data.is_empty());
 
         // Verify names are properly sorted
         if page.data.len() > 1 {
@@ -593,15 +604,5 @@ mod tests {
         );
         assert!(boundary_page.has_prev, "Boundary page should have previous");
         assert_eq!(boundary_page.data.len(), 3);
-    }
-}
-
-struct TestUserRepo<'a> {
-    pool: &'a Pool,
-}
-
-impl<'a> UserRepo for TestUserRepo<'a> {
-    fn get_pool(&self) -> &Pool {
-        self.pool
     }
 }

@@ -9,7 +9,7 @@ members = [
     # Integration tests - not published to crates.io
     # "test-integration-sqlite",
     #"test-integration-mysql",
-    # "test-integration-postgresql",
+    "test-integration-postgresql",
 ]
 default-members = ["sqlx-data"]
 

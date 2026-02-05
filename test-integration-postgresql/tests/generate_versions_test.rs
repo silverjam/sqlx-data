@@ -24,7 +24,7 @@ pub struct User {
 #[repo]
 trait UserVariantRepo {
     // Regular method without variants
-    #[dml("SELECT COUNT(*) FROM users")]
+    #[dml("SELECT COUNT(*) as \"count!: i64\" FROM users")]
     async fn count_users(&self) -> Result<i64>;
 
     // Method with pool and transaction variants
@@ -41,7 +41,7 @@ trait UserVariantRepo {
     // Method with complex query and pool variant
     #[generate_versions(pool)]
     #[dml("SELECT id as \"id!: UserId\", name, email, age FROM users WHERE age >= $1")]
-    async fn find_adults(&self, min_age: i32) -> Result<Vec<User>>;
+    async fn find_adults(&self, min_age: i16) -> Result<Vec<User>>;
 
     // Method with tuple return, multiple variants, and instrument macro
     #[generate_versions(tx, conn)]
@@ -52,7 +52,7 @@ trait UserVariantRepo {
     // Insert method with executor variant
     #[generate_versions(exec)]
     #[dml("INSERT INTO users (name, email, age) VALUES ($1, $2, $3)")]
-    async fn create_user(&self, name: String, email: String, age: i32) -> Result<PgQueryResult>;
+    async fn create_user(&self, name: String, email: String, age: i16) -> Result<PgQueryResult>;
 }
 
 // Test implementation
@@ -66,6 +66,7 @@ impl UserVariantRepo for TestVariantApp {
     }
 }
 
+#[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,7 +84,7 @@ mod tests {
 
         // Test original methods that have variants still work
         let adults = repo.find_adults(25).await.unwrap();
-        assert!(adults.len() > 0);
+        assert!(!adults.is_empty());
         assert!(adults.iter().all(|u| u.age >= 25));
     }
 
@@ -96,7 +97,7 @@ mod tests {
 
         // Test delete_user_with_pool variant
         // First create a test user to delete
-        let insert_result = repo.create_user(
+        let _insert_result = repo.create_user(
             "TestDelete".to_string(),
             "testdelete@example.com".to_string(),
             30,
@@ -112,7 +113,7 @@ mod tests {
 
         // Test find_adults_with_pool variant
         let adults = repo.find_adults_with_pool(&pool, 25).await.unwrap();
-        assert!(adults.len() > 0);
+        assert!(!adults.is_empty());
         assert!(adults.iter().all(|u| u.age >= 25));
     }
 

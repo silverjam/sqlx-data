@@ -96,6 +96,7 @@ impl TupleRepo for TestApp {
     }
 }
 
+#[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,7 +253,7 @@ mod tests {
         let app = TestApp { pool };
         let names = app.find_names_by_age_range(25, 35).await.unwrap();
 
-        assert!(names.len() > 0);
+        assert!(!names.is_empty());
         assert!(names.contains(&"Alice".to_string())); // Age 30
         assert!(names.contains(&"Bob".to_string())); // Age 25
         assert!(names.contains(&"Charlie".to_string())); // Age 35

@@ -59,6 +59,7 @@ impl NamedParamRepo for TestNamedParamApp {
     }
 }
 
+#[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,9 +71,6 @@ mod tests {
     async fn test_named_parameters_compile(pool: Pool) {
         // This test verifies that named parameters compile correctly
         let _repo = TestNamedParamApp { pool };
-
-        // If we reach here, named parameters are working
-        assert!(true);
     }
 
     #[sqlx::test(
