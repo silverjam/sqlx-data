@@ -9,7 +9,7 @@
 
 <div align="center">
   <p align="center">
-    <img src="resources/sqlxdata.jpg" alt="sqlx-data banner" width="50%">
+    <img src="https://github.com/josercarmo/sqlx-data/raw/HEAD/resources/sqlxdata.jpg" alt="sqlx-data banner" width="50%">
   </p>
 </div>
 
@@ -199,17 +199,17 @@ SQLx-Data uses feature flags to enable database and type support. **You must spe
 ```toml
 # For SQLite with JSON
 [dependencies]
-sqlx-data = { version = "0.1.1", features = ["sqlite", "json"] }
+sqlx-data = { version = "0.1.2", features = ["sqlite", "json"] }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "macros", "migrate"] }
 
 # For PostgreSQL with multiple types
 [dependencies]
-sqlx-data = { version = "0.1.1", features = ["postgres", "json", "chrono", "uuid"] }
+sqlx-data = { version = "0.1.2", features = ["postgres", "json", "chrono", "uuid"] }
 sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "macros", "migrate"] }
 
 # For MySQL with tracing
 [dependencies]
-sqlx-data = { version = "0.1.1", features = ["mysql", "json", "tracing"] }
+sqlx-data = { version = "0.1.2", features = ["mysql", "json", "tracing"] }
 sqlx = { version = "0.8", features = ["mysql", "runtime-tokio", "macros", "migrate"] }
 ```
 
@@ -219,7 +219,7 @@ sqlx = { version = "0.8", features = ["mysql", "runtime-tokio", "macros", "migra
 
 ```toml
 [dependencies]
-sqlx-data = { version = "0.1.1", features = ["sqlite","json"] }
+sqlx-data = { version = "0.1.2", features = ["sqlite","json"] }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
 tokio = { version = "1", features = ["full"] }
 ```
@@ -720,7 +720,7 @@ trait UserRepo {
 
 See the generated SQL and implementation in your IDE:
 
-![Hover to see generated code](resources/hover_to_inspect.gif)
+![Hover to see generated code](https://github.com/josercarmo/sqlx-data/raw/HEAD/resources/hover_to_inspect.gif)
 
 **Pro tip:** Copy the generated code to override methods or call `_query` methods from custom logic:
 
