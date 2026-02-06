@@ -8,6 +8,7 @@ repository.workspace = true
 description.workspace = true
 keywords.workspace = true
 categories = ["database", "development-tools::procedural-macro-helpers"]
+readme = "README.md"
 
 [dependencies]
 sqlx-data-params = { workspace = true }
