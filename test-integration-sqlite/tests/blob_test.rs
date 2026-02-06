@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use sqlx_data::{
-    IntoParams, ParamsBuilder, QueryResult, Result, Serial, SerialParams, Slice, SliceParams,
+    IntoParams, ParamsBuilder, Pool, QueryResult, Result, Serial, SerialParams, Slice, SliceParams
 };
 use sqlx_data::{dml, repo};
 
@@ -16,6 +16,25 @@ pub struct FileView {
 //require to prevent issues working with Vec<u8>
 //Vec<u8> could be anything: age list, but can also be a bytes list
 pub type Blob = Vec<u8>;
+
+/* 
+The error occurs because SQLx infers the `data` column as nullable (`Option<Vec<u8>>`) but your struct expects a non-nullable `Bytes`. Use a column override to force non-null or make the field optional.
+
+
+- SQLx infers nullability from the database schema; if `data` can be NULL, it generates `Option<Vec<u8>>` for a BYTEA column
+- `bytes::Bytes` implements `From<Vec<u8>>` but not `From<Option<Vec<u8>>>`, causing the trait bound error
+- The `"data!"` override forces the macro to treat the column as NOT NULL, removing the `Option` wrapper [2](#3-1) 
+
+### Choosing between options
+
+- Use `"data!"` if you know the column is never NULL in practice
+- Use `Option<Bytes>` if the column can be NULL and you want to handle that explicitly
+
+### Notes
+
+- The same override syntax works for PostgreSQL, MySQL, and SQLite
+- For nullable columns, you can also use `"data?: Bytes"` to explicitly specify the type while keeping nullability [3](#3-2) 
+*/
 
 #[repo]
 trait FileRepo {
@@ -105,46 +124,57 @@ trait FileRepo {
     async fn update_file_data_bytes(&self, id: i64, data: Bytes) -> Result<QueryResult>;
 
     // Read operations
-    #[dml("SELECT id, name, content_type, data FROM files ORDER BY id")]
+    #[dml("SELECT id, name, content_type, data as 'data!' FROM files ORDER BY id")]
     async fn find_files_serial(&self, params: SerialParams) -> Result<Serial<FileView>>;
 
-    #[dml("SELECT id, name, content_type, data FROM files ORDER BY id")]
+    #[dml("SELECT id, name, content_type, data as 'data!' FROM files ORDER BY id")]
     async fn find_files_slice(&self, params: SliceParams) -> Result<Slice<FileView>>;
 
-    #[dml("SELECT id, name, content_type, data FROM files ORDER BY id")]
+    #[dml("SELECT id, name, content_type, data as 'data!' FROM files ORDER BY id")]
     async fn find_files_builder(&self, params: impl IntoParams) -> Result<Slice<FileView>>;
 
     //TODO REVIEW: support Bytes in tuple?
     //async fn find_files_tuple(&self, params: SerialParams) -> Result<Serial<(i64, String, String, Bytes)>, sqlx::Error>;❌
-    #[dml("SELECT id, name, content_type, data FROM files ORDER BY id")]
+    #[dml("SELECT id, name, content_type, data as 'data!' FROM files ORDER BY id")]
     async fn find_files_tuple(
         &self,
         params: SerialParams,
     ) -> Result<Serial<(i64, String, String, Vec<u8>)>>;
 
-    #[dml("SELECT id, name, content_type, data FROM files ORDER BY id LIMIT 10")]
+    #[dml("SELECT id, name, content_type, data as 'data!' FROM files ORDER BY id LIMIT 10")]
     async fn find_all_files(&self) -> Result<Vec<FileView>>;
 
-    #[dml("SELECT id, data FROM files ORDER BY id LIMIT 10")] // add any field, here we use id
+    #[dml("SELECT id, data as 'data!' FROM files ORDER BY id LIMIT 10")] // add any field, here we use id
     async fn find_many_files(&self) -> Result<Vec<(i64, Vec<u8>)>>;
 
     // Test multiple BLOBs - now properly supported as Vec<Vec<u8>>
-    #[dml("SELECT data FROM files ORDER BY id LIMIT 10")]
+    #[dml("SELECT data as 'data!' FROM files ORDER BY id LIMIT 10")]
     async fn find_many_files_vec(&self) -> Result<Vec<Blob>>;
 
     // Test single BLOB - USE TUPLE and not just Vec<u8>!!!!
-    #[dml("SELECT id, data FROM files ORDER BY id LIMIT 1")] // add any field, here we use id
+    #[dml("SELECT id, data as 'data!' FROM files ORDER BY id LIMIT 1")] // add any field, here we use id
     async fn find_one_file(&self) -> Result<(i64, Vec<u8>)>;
 
     //Just define a pub Blob = Vec<u8>; and everything works fine with Vec<u8>
-    #[dml("SELECT data FROM files ORDER BY id LIMIT 1")] // add any field, here we use id
+    #[dml("SELECT data as 'data!' FROM files ORDER BY id LIMIT 1")] // add any field, here we use id
     async fn find_one_file_byte(&self) -> Result<Blob>;
 
     // Test multiple BLOBs - now properly supported as Vec<Vec<u8>> with blob
-    #[dml("SELECT data FROM files ORDER BY id LIMIT 10")]
+    #[dml("SELECT data as 'data!' FROM files ORDER BY id LIMIT 10")]
     async fn find_many_files_blob(&self) -> Result<Vec<Blob>>;
 }
 
+struct TestFileRepo<'a> {
+    pool: &'a Pool,
+}
+
+impl<'a> FileRepo for TestFileRepo<'a> {
+    fn get_pool(&self) -> &Pool {
+        self.pool
+    }
+}
+
+#[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use sqlx_data::{Pool, SerialParams, SliceParams};
@@ -338,7 +368,7 @@ mod tests {
             );
 
             // Verify that the Vec<u8> -> Bytes conversion worked
-            assert!(file.data.len() > 0);
+            assert!(!file.data.is_empty(), "BLOB data should not be empty");
         }
 
         // Verify specific contents
@@ -780,16 +810,6 @@ mod tests {
         );
     }
 
-    struct TestFileRepo<'a> {
-        pool: &'a Pool,
-    }
-
-    impl<'a> FileRepo for TestFileRepo<'a> {
-        fn get_pool(&self) -> &Pool {
-            self.pool
-        }
-    }
-
     async fn setup_test_db_with_files() -> Pool {
         let pool = Pool::connect(":memory:").await.unwrap();
 
@@ -814,7 +834,7 @@ mod tests {
             r#"{"message": "Este e um arquivo JSON com dados estruturados", "size": 1024}"#;
         let file3_data = vec![0u8; 100];
 
-        let files = vec![
+        let files = [
             ("file1.txt", "text/plain", file1_data.as_bytes()),
             ("file2.json", "application/json", file2_data.as_bytes()),
             (

@@ -104,7 +104,7 @@ trait CustomerRepo {
 
     //Ok
     #[dml("SELECT MAX(created_at) FROM customers")]
-    async fn max_created_at(&self) -> Result<Option<String>>;
+    async fn max_created_at(&self) -> Result<Option<NaiveDateTime>>;
 
     //OK
     #[dml("SELECT MAX(created_at) as 'created_at: NaiveDateTime' FROM customers")]
@@ -249,6 +249,7 @@ impl CustomerRepo for CustomerRepoImpl {
     }
 }
 
+#[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -419,7 +420,7 @@ mod tests {
         // Just verify we get a string result (SQLite MAX returns string)
         assert!(max_created.is_some());
         let max_time = max_created.unwrap();
-        assert!(!max_time.is_empty());
+        assert!(!max_time.to_string().is_empty());
 
         Ok(())
     }
@@ -483,10 +484,9 @@ mod tests {
         // Find our test customer
         let test_customer = customers
             .iter()
-            .find(|(customer_id, _, _, _)| *customer_id == id)
-            .expect("Test customer should be found");
+            .find(|(customer_id, _, _, _)| *customer_id == id);
 
-        let (_, name, created_at, next_day) = test_customer;
+        let (_, name, created_at, next_day) = test_customer.unwrap();
 
         // Verify the data
         assert_eq!(name, "Test Customer");

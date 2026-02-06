@@ -19,7 +19,7 @@ sqlx = { workspace = true, features = [
     "macros",
     "migrate",
 ] }
-sqlx-data = { workspace = true, features = ["sqlite", "tracing","json","chrono","bit-vec"] }
+sqlx-data = { workspace = true, features = ["sqlite", "tracing","json","chrono"] }
 futures = { workspace = true }
 tokio = { workspace = true }
 tempfile = { workspace = true }
