@@ -5,7 +5,7 @@ Let's get you up and running with SQLx-Data in under 10 minutes. By the end of t
 ## Prerequisites
 
 Before we begin, ensure you have:
-- Rust 1.75+ installed
+- Rust 1.94+ installed
 - A SQLite database (we'll create one as we go)
 - Your favorite text editor or IDE
 
@@ -23,7 +23,7 @@ Add SQLx-Data to your `Cargo.toml`:
 ```toml
 [dependencies]
 sqlx-data = { version = "0.1.0", features = ["sqlite"] }
-sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
+sqlx = { version = "0.9.0", features = ["sqlite", "runtime-tokio"] }
 tokio = { version = "1", features = ["full"] }
 ```
 

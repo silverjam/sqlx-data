@@ -351,9 +351,21 @@ impl TypeAnalyzer {
 
             ReturnType::Tuple { .. } => Ok(QueryType::QueryAs),
 
-            ReturnType::Vec { element_type } => Self::determine_query_strategy(element_type),
+            ReturnType::Vec { element_type } => {
+                match element_type.as_ref() {
+                    // Vec<u8> is a scalar binary payload, not a collection of result rows.
+                    ReturnType::Scalar { name } if name == "u8" => Ok(QueryType::QueryScalar),
+                    _ => Self::determine_query_strategy(element_type),
+                }
+            }
 
-            ReturnType::Option { inner_type } => Self::determine_query_strategy(inner_type),
+            ReturnType::Option { inner_type } => match inner_type.as_ref() {
+                // Option<Vec<u8>> is also a scalar binary payload.
+                ReturnType::Vec { element_type } if matches!(element_type.as_ref(), ReturnType::Scalar { name } if name == "u8") => {
+                    Ok(QueryType::QueryScalar)
+                }
+                _ => Self::determine_query_strategy(inner_type),
+            },
 
             // Stream types delegate to their item type strategy
             ReturnType::Stream { item_type } => Self::determine_query_strategy(item_type),
@@ -696,31 +708,6 @@ impl TypeAnalyzer {
 
     pub fn ends_with_any(path: &syn::Path, names: &[&str]) -> bool {
         names.iter().any(|n| TypeAnalyzer::path_ends_with(path, n))
-    }
-
-    /// Check if return type is Result<Vec<Option<T>>, E>
-    pub fn is_vec_option_type(return_type: &syn::Type) -> bool {
-        let analyzed = match TypeAnalyzer::analyze_type(return_type) {
-            Ok(t) => t,
-            Err(_) => {
-                log::warn!(
-                    "Failed to analyze return type for Vec<Option<T>> detection: {:?}",
-                    return_type
-                );
-                return false;
-            }
-        };
-
-        match analyzed {
-            crate::type_system::ReturnType::Result { ok_type, .. } => {
-                // Check if ok_type is Vec<Option<T>>
-                matches!(ok_type.as_ref(),
-                    crate::type_system::ReturnType::Vec { element_type }
-                    if matches!(element_type.as_ref(), crate::type_system::ReturnType::Option { .. })
-                )
-            }
-            _ => false,
-        }
     }
 
     /// Compare two syn::Type for equality

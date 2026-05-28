@@ -16,7 +16,7 @@ type Json = sqlx_data_integration::Json<sqlx_data_integration::JsonValue>;
 #[cfg(not(feature = "json"))]
 type Json = String;
 
-fn bind_filter_values<'q, DB>(values: &'q [FilterValue]) -> Result<DbArguments<'q>>
+fn bind_filter_values<'q, DB>(values: &'q [FilterValue]) -> Result<DbArguments>
 where
     DB: Database,
     FilterValue: Encode<'q, DB> + Type<DB>,
@@ -79,17 +79,17 @@ where
 /// // sqlx::query("SELECT * FROM users WHERE id = ?").bind(&filter);
 /// ```
 #[cfg(any(feature = "mysql", feature = "postgres"))]
-impl<'q> IntoArguments<'q, DB> for FilterValue {
+impl IntoArguments<DB> for FilterValue {
     #[allow(clippy::expect_used)]
-    fn into_arguments(self) -> DbArguments<'q> {
+    fn into_arguments(self) -> DbArguments {
         bind_filter_values::<DB>(&[self]).expect("unsupported argument in filter value.")
     }
 }
 
 #[cfg(feature = "sqlite")]
-impl<'q> IntoArguments<'q, DB> for FilterValue {
+impl IntoArguments<DB> for FilterValue {
     #[allow(clippy::expect_used)]
-    fn into_arguments(self) -> DbArguments<'q> {
+    fn into_arguments(self) -> DbArguments {
         let mut args = DbArguments::default();
 
         let result = match self {
@@ -109,7 +109,7 @@ impl<'q> IntoArguments<'q, DB> for FilterValue {
 }
 
 impl FilterValue {
-    pub fn build_arguments<'q, DB>(filters: &'q [FilterValue]) -> Result<DbArguments<'q>>
+    pub fn build_arguments<'q, DB>(filters: &'q [FilterValue]) -> Result<DbArguments>
     where
         DB: Database,
         FilterValue: Encode<'q, DB> + Type<DB>,
@@ -137,7 +137,7 @@ impl Params {
     pub fn build_arguments<'q>(
         &'q self,
         bind_values: &'q [FilterValue],
-    ) -> impl Fn() -> Result<DbArguments<'q>> + 'q {
+    ) -> impl Fn() -> Result<DbArguments> + 'q {
         move || bind_filter_values::<DB>(bind_values)
     }
 }
@@ -169,7 +169,7 @@ where
     BString: Encode<'q, DB>,
     MacAddress: Encode<'q, DB>,
 {
-    fn encode_by_ref(&self, args: &mut DbArgumentBuffer<'q>) -> Result<IsNull, BoxDynError> {
+    fn encode_by_ref(&self, args: &mut DbArgumentBuffer) -> Result<IsNull, BoxDynError> {
         match self {
             // Basic types
             FilterValue::String(s) => s.encode_by_ref(args),

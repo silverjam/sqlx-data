@@ -154,17 +154,17 @@ SQLx-Data uses feature flags to enable database and type support. **You must spe
 # For SQLite with JSON
 [dependencies]
 sqlx-data = { version = "0.1.5", features = ["sqlite", "json"] }
-sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "macros", "migrate"] }
+sqlx = { version = "0.9.0", features = ["sqlite", "runtime-tokio", "macros", "migrate"] }
 
 # For PostgreSQL with multiple types
 [dependencies]
 sqlx-data = { version = "0.1.5", features = ["postgres", "json", "chrono", "uuid"] }
-sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "macros", "migrate"] }
+sqlx = { version = "0.9.0", features = ["postgres", "runtime-tokio", "macros", "migrate"] }
 
 # For MySQL with tracing
 [dependencies]
 sqlx-data = { version = "0.1.5", features = ["mysql", "json", "tracing"] }
-sqlx = { version = "0.8", features = ["mysql", "runtime-tokio", "macros", "migrate"] }
+sqlx = { version = "0.9.0", features = ["mysql", "runtime-tokio", "macros", "migrate"] }
 ```
 
 ---
@@ -174,7 +174,7 @@ sqlx = { version = "0.8", features = ["mysql", "runtime-tokio", "macros", "migra
 ```toml
 [dependencies]
 sqlx-data = { version = "0.1.5", features = ["sqlite","json"] }
-sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
+sqlx = { version = "0.9.0", features = ["sqlite", "runtime-tokio"] }
 tokio = { version = "1", features = ["full"] }
 ```
 

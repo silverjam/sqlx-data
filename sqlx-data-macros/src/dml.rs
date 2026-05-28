@@ -123,6 +123,17 @@ impl ReturnTypeInfo {
                     let Some(segment) = path.path.segments.last() else {
                         break;
                     };
+
+                    let should_unwrap = match segment.ident.to_string().as_str() {
+                        "Result" | "Vec" | "Option" => true,
+                        name if pagination::ALL_TYPES.contains(&name) => true,
+                        _ => false,
+                    };
+
+                    if !should_unwrap {
+                        break;
+                    }
+
                     let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
                         break;
                     };
@@ -140,6 +151,11 @@ impl ReturnTypeInfo {
                         let Some(last_segment) = trait_bound.path.segments.last() else {
                             continue;
                         };
+
+                        if last_segment.ident != "Stream" {
+                            continue;
+                        }
+
                         let syn::PathArguments::AngleBracketed(args) = &last_segment.arguments
                         else {
                             continue;

@@ -565,8 +565,9 @@ impl MultiRowInsertGenerator {
 
     fn build_execution(context: &GenerationContext) -> syn::Result<TokenStream> {
         let fetch_call = &context.fetch_call;
+        let pool_expr = &context.pool_expr;
         Ok(match context.fetch_method {
-            FetchMethod::Execute => quote! { qb.build().execute(self.get_pool()).await },
+            FetchMethod::Execute => quote! { qb.build().execute(#pool_expr).await },
             _ => match context.query_type {
                 QueryType::QueryScalar => quote! { qb.build_query_scalar()#fetch_call.await },
                 QueryType::QueryAs => quote! { qb.build_query_as()#fetch_call.await },
@@ -731,7 +732,7 @@ Columns found: {:?}",
             let target_type_str = inner_type.to_token_stream().to_string();
             if target_type_str.ends_with("QueryResult") {
                 return Ok(quote_spanned! { method.method_span() =>
-                    sqlx::query(#cleaned_sql)
+                    sqlx::query(sqlx::AssertSqlSafe(#cleaned_sql))
                         #(#bind_calls)*
                         #fetch_call
                         .await
@@ -740,7 +741,7 @@ Columns found: {:?}",
 
             // For other struct types, use query_as
             return Ok(quote_spanned! { method.method_span() =>
-                sqlx::query_as::<_, #inner_type>(#cleaned_sql)
+                sqlx::query_as::<_, #inner_type>(sqlx::AssertSqlSafe(#cleaned_sql))
                     #(#bind_calls)*
                     #fetch_call
                     .await
@@ -769,6 +770,7 @@ impl QueryScalarGenerator {
         let param_names = &context.param_names;
         let method = context.method;
         let fetch_call = &context.fetch_call;
+        let ok_type = method.get_ok_type().unwrap_or(scalar_type);
 
         let sql = method.sql_content.clone();
         let cleaned_sql = clean_sqlx_cast_syntax_for_runtime(&sql);
@@ -776,7 +778,7 @@ impl QueryScalarGenerator {
         if method.is_unchecked {
             let bind_calls = param_names.iter().map(|param| quote! { .bind(#param) });
             return Ok(quote_spanned! { method.method_span() =>
-                sqlx::query_scalar(#cleaned_sql)
+                sqlx::query_scalar(sqlx::AssertSqlSafe(#cleaned_sql))
                     #(#bind_calls)*
                     #fetch_call
                     .await
@@ -798,138 +800,157 @@ impl QueryScalarGenerator {
             })
             .unwrap_or(false);
 
-        let needs_casting =
-            !has_explicit_casting && TypeCastingAnalyzer::needs_casting(scalar_type);
-        let is_option = TypeCastingAnalyzer::extract_option_type(scalar_type).is_some();
-        let should_auto_flatten = Self::should_use_auto_flatten(
-            method.return_type().unwrap_or(&syn::parse_quote! { () }),
-        );
-        let target_type_token =
-            if let Some(inner) = TypeCastingAnalyzer::extract_option_type(scalar_type) {
-                inner
-            } else {
-                scalar_type.clone()
-            };
+        let bind_calls = param_names.iter().map(|param| quote! { .bind(#param) });
+
+        let compile_validation = quote! {
+            sqlx_data::compile_time_only! {
+                let _ = sqlx::query_scalar!(#sql, #(#param_names),*);
+            }
+        };
 
         // Separate logic: Vec operations vs single value operations
         match fetch_method {
             FetchMethod::FetchAll => {
-                // Vec<T> operations - handle element-wise transformations
-                if needs_casting {
-                    let is_vec_option = TypeAnalyzer::is_vec_option_type(
-                        method.return_type().unwrap_or(&syn::parse_quote! { () }),
-                    );
-                    let map_expr = if is_vec_option {
-                        quote! { |v| v.map(|inner| inner as #target_type_token) }
+                let element_type = TypeAnalyzer::get_vec_inner_type(ok_type)
+                    .cloned()
+                    .unwrap_or_else(|| scalar_type.clone());
+                let is_vec_option = TypeCastingAnalyzer::extract_option_type(&element_type).is_some();
+                let target_type_token = if let Some(inner) = TypeCastingAnalyzer::extract_option_type(&element_type) {
+                    inner
+                } else {
+                    element_type.clone()
+                };
+                let needs_casting = !has_explicit_casting && TypeCastingAnalyzer::needs_casting(&target_type_token);
+                let runtime_scalar_type = if needs_casting {
+                    TypeCastingAnalyzer::native_type(&target_type_token)
+                } else {
+                    target_type_token.clone()
+                };
+
+                if is_vec_option {
+                    let map_expr = if needs_casting {
+                        if is_bool(&target_type_token) {
+                            quote! { |v| v.map(|inner| inner != 0) }
+                        } else {
+                            quote! { |v| v.map(|inner| inner as #target_type_token) }
+                        }
+                    } else {
+                        quote! { |v| v }
+                    };
+
+                    Ok(quote_spanned! { method.method_span() =>
+                        #compile_validation
+                        let value = sqlx::query_scalar::<sqlx_data::DB, Option<#runtime_scalar_type>>(sqlx::AssertSqlSafe(#cleaned_sql))
+                            #(#bind_calls)*
+                            #fetch_call
+                            .await?;
+                        Ok(value.into_iter().map(#map_expr).collect())
+                    })
+                } else if needs_casting {
+                    let map_expr = if is_bool(&target_type_token) {
+                        quote! { |v| v != 0 }
                     } else {
                         quote! { |v| v as #target_type_token }
                     };
 
                     Ok(quote_spanned! { method.method_span() =>
-
-                        let value = sqlx::query_scalar!(#sql, #(#param_names),*)
+                        #compile_validation
+                        let value = sqlx::query_scalar::<sqlx_data::DB, #runtime_scalar_type>(sqlx::AssertSqlSafe(#cleaned_sql))
+                            #(#bind_calls)*
                             #fetch_call
-                            .await;
-                        Ok(value?.into_iter().map(#map_expr).collect())
-
+                            .await?;
+                        Ok(value.into_iter().map(#map_expr).collect())
                     })
                 } else {
-                    // Vec without casting - direct SQLx call
                     Ok(quote_spanned! { method.method_span() =>
-                        sqlx::query_scalar!(#sql, #(#param_names),*)
+                        #compile_validation
+                        sqlx::query_scalar::<sqlx_data::DB, #runtime_scalar_type>(sqlx::AssertSqlSafe(#cleaned_sql))
+                            #(#bind_calls)*
                             #fetch_call
                             .await
                     })
                 }
             }
+            FetchMethod::FetchOptional => {
+                let optional_inner_type = TypeCastingAnalyzer::extract_option_type(ok_type)
+                    .unwrap_or_else(|| scalar_type.clone());
+                let nested_optional_inner = TypeCastingAnalyzer::extract_option_type(&optional_inner_type);
+                let target_type_token = nested_optional_inner.clone().unwrap_or(optional_inner_type.clone());
+                let needs_casting = !has_explicit_casting && TypeCastingAnalyzer::needs_casting(&target_type_token);
+                let runtime_scalar_type = if needs_casting {
+                    TypeCastingAnalyzer::native_type(&target_type_token)
+                } else {
+                    target_type_token.clone()
+                };
+
+                let optional_result = if nested_optional_inner.is_some() {
+                    if needs_casting {
+                        if is_bool(&target_type_token) {
+                            quote! { Ok(value.map(|inner| inner.map(|v| v != 0))) }
+                        } else {
+                            quote! { Ok(value.map(|inner| inner.map(|v| v as #target_type_token))) }
+                        }
+                    } else {
+                        quote! { Ok(value) }
+                    }
+                } else if needs_casting {
+                    if is_bool(&target_type_token) {
+                        quote! { Ok(value.flatten().map(|v| v != 0)) }
+                    } else {
+                        quote! { Ok(value.flatten().map(|v| v as #target_type_token)) }
+                    }
+                } else {
+                    quote! { Ok(value.flatten()) }
+                };
+
+                let query_scalar_type = quote! { Option<#runtime_scalar_type> };
+
+                Ok(quote_spanned! { method.method_span() =>
+                    #compile_validation
+                    let value = sqlx::query_scalar::<sqlx_data::DB, #query_scalar_type>(sqlx::AssertSqlSafe(#cleaned_sql))
+                        #(#bind_calls)*
+                        #fetch_call
+                        .await?;
+                    #optional_result
+                })
+            }
             _ => {
-                // Single value operations - apply transformations based on flags
-                match (needs_casting, should_auto_flatten) {
-                    (true, true) => {
-                        // Both casting and auto-flatten needed
-                        // Use option_cast_expr directly for flatten + casting
-                        let cast_expr = option_cast_expr(
-                            quote! { value? },
-                            scalar_type,
-                            false, // is_tuple: this is a scalar value
-                        );
-                        Ok(quote_spanned! { method.method_span() =>
+                let target_type_token = ok_type.clone();
+                let needs_casting = !has_explicit_casting && TypeCastingAnalyzer::needs_casting(&target_type_token);
+                let runtime_scalar_type = if needs_casting {
+                    TypeCastingAnalyzer::native_type(&target_type_token)
+                } else {
+                    target_type_token.clone()
+                };
 
-                            let value = sqlx::query_scalar!(#sql, #(#param_names),*)
-                                #fetch_call
-                                .await;
-                            // Apply flatten + casting for Option<Option<T>> -> Option<T>
-                            Ok(#cast_expr)
+                if needs_casting {
+                    let cast_expr = if is_bool(&target_type_token) {
+                        quote! { value != 0 }
+                    } else {
+                        quote! { value as #target_type_token }
+                    };
 
-                        })
-                    }
-                    (false, true) => {
-                        // Auto-flatten only - no casting needed
-                        Ok(quote_spanned! { method.method_span() =>
-
-                            let value = sqlx::query_scalar!(#sql, #(#param_names),*)
-                                #fetch_call
-                                .await;
-                            // Apply flatten for Option<Option<T>> -> Option<T>
-                            Ok(value?.flatten())
-
-                        })
-                    }
-                    (true, false) => {
-                        // Casting only - no auto-flatten needed
-                        let cast_expr = generate_conversion_expr(
-                            quote! { value },
-                            &target_type_token,
-                            is_option,
-                            false, // is_tuple: this is a scalar value
-                        );
-                        Ok(quote_spanned! { method.method_span() =>
-
-                            let value = sqlx::query_scalar!(#sql, #(#param_names),*)
-                                #fetch_call
-                                .await?;
-                            Ok(#cast_expr)
-
-                        })
-                    }
-                    (false, false) => {
-                        // No transformations needed - direct SQLx call
-                        Ok(quote_spanned! { method.method_span() =>
-                            sqlx::query_scalar!(#sql, #(#param_names),*)
-                                #fetch_call
-                                .await
-                        })
-                    }
+                    Ok(quote_spanned! { method.method_span() =>
+                        #compile_validation
+                        let value = sqlx::query_scalar::<sqlx_data::DB, #runtime_scalar_type>(sqlx::AssertSqlSafe(#cleaned_sql))
+                            #(#bind_calls)*
+                            #fetch_call
+                            .await?;
+                        Ok(#cast_expr)
+                    })
+                } else {
+                    Ok(quote_spanned! { method.method_span() =>
+                        #compile_validation
+                        sqlx::query_scalar::<sqlx_data::DB, #runtime_scalar_type>(sqlx::AssertSqlSafe(#cleaned_sql))
+                            #(#bind_calls)*
+                            #fetch_call
+                            .await
+                    })
                 }
             }
         }
     }
 
-    /// Check if we should use auto_flatten based on return type signature
-    /// Only applies when return type is Result<Option<T>, E>
-    fn should_use_auto_flatten(return_type: &syn::Type) -> bool {
-        let analyzed = match TypeAnalyzer::analyze_type(return_type) {
-            Ok(t) => t,
-            Err(_) => {
-                log::warn!(
-                    "Failed to analyze return type for auto-flatten detection: {:?}",
-                    return_type
-                );
-                return false;
-            }
-        };
-
-        match analyzed {
-            crate::type_system::ReturnType::Result { ok_type, .. } => {
-                // Check if ok_type is Option<T>
-                matches!(
-                    ok_type.as_ref(),
-                    crate::type_system::ReturnType::Option { .. }
-                )
-            }
-            _ => false,
-        }
-    }
 }
 
 /// Generates raw query! calls
@@ -960,7 +981,7 @@ impl QueryGenerator {
                 // For unchecked execute queries, always map to () since FetchMethod::Execute expects ()
                 let bind_calls = param_names.iter().map(|param| quote! { .bind(#param) });
                 Ok(quote_spanned! { method.method_span() =>
-                    sqlx::query(#cleaned_sql)
+                    sqlx::query(sqlx::AssertSqlSafe(#cleaned_sql))
                         #(#bind_calls)*
                         #fetch_call
                         .await
@@ -972,7 +993,7 @@ impl QueryGenerator {
                 // For unchecked non-execute queries, use .map(|_| ()) for compatibility
                 let bind_calls = param_names.iter().map(|param| quote! { .bind(#param) });
                 Ok(quote_spanned! { method.method_span() =>
-                    sqlx::query(#cleaned_sql)
+                    sqlx::query(sqlx::AssertSqlSafe(#cleaned_sql))
                         #(#bind_calls)*
                         #fetch_call
                         .await
@@ -1286,7 +1307,7 @@ impl StreamGenerator {
             let bind_calls = param_names.iter().map(|param| quote! { .bind(#param) });
             return Ok(quote_spanned! { method.method_span() =>
 
-                sqlx::query_as::<_, #tuple_type>(#cleaned_sql)
+                sqlx::query_as::<_, #tuple_type>(sqlx::AssertSqlSafe(#cleaned_sql))
                     #(#bind_calls)*
                     #fetch_call
             });
@@ -1307,7 +1328,7 @@ impl StreamGenerator {
             }
 
             // Runtime execution - uses cleaned SQL without cast syntax
-            sqlx::query_as::<_, #tuple_type>(#cleaned_sql)
+            sqlx::query_as::<_, #tuple_type>(sqlx::AssertSqlSafe(#cleaned_sql))
                 #(#bind_calls)*
                 #fetch_call
         })
@@ -1326,7 +1347,7 @@ impl StreamGenerator {
         if method.is_unchecked {
             let bind_calls = param_names.iter().map(|param| quote! { .bind(#param) });
             return Ok(quote_spanned! { method.method_span() =>
-                sqlx::query_scalar(#cleaned_sql)
+                sqlx::query_scalar(sqlx::AssertSqlSafe(#cleaned_sql))
                     #(#bind_calls)*
                     #fetch_call
             });
@@ -1344,7 +1365,7 @@ impl StreamGenerator {
             }
 
             // Runtime execution - uses cleaned SQL without cast syntax
-            sqlx::query_scalar(#cleaned_sql)
+            sqlx::query_scalar(sqlx::AssertSqlSafe(#cleaned_sql))
                 #(#bind_calls)*
                 #fetch_call
         })
@@ -1363,7 +1384,7 @@ impl StreamGenerator {
         if method.is_unchecked {
             let bind_calls = param_names.iter().map(|param| quote! { .bind(#param) });
             return Ok(quote_spanned! { method.method_span() =>
-                sqlx::query_as::<_, #struct_type>(#cleaned_sql)
+                sqlx::query_as::<_, #struct_type>(sqlx::AssertSqlSafe(#cleaned_sql))
                     #(#bind_calls)*
                     #fetch_call
             });
@@ -1381,7 +1402,7 @@ impl StreamGenerator {
             }
 
             // Runtime execution - uses cleaned SQL without cast syntax
-            sqlx::query_as::<_, #struct_type>(#cleaned_sql)
+            sqlx::query_as::<_, #struct_type>(sqlx::AssertSqlSafe(#cleaned_sql))
                 #(#bind_calls)*
                 #fetch_call
         })
@@ -1450,14 +1471,34 @@ impl PaginatedGenerator {
                 let initial_binds = MethodSignatureGenerator::generate_initial_binds(method);
 
                 // Generate response creation logic based on pagination type
+                let count_args_expr = {
+                    #[cfg(feature = "mysql")]
+                    {
+                        quote! {
+                            {
+                                let count_placeholder_count = count_sql.matches('?').count();
+                                let count_bind_values: Vec<_> = built_sql
+                                    .bind_values
+                                    .iter()
+                                    .take(count_placeholder_count)
+                                    .cloned()
+                                    .collect();
+                                sqlx_data::FilterValue::build_arguments::<sqlx_data::DB>(&count_bind_values)?
+                            }
+                        }
+                    }
+                    #[cfg(not(feature = "mysql"))]
+                    {
+                        quote! { make_args()? }
+                    }
+                };
+
                 let create_response = match pagination_variant.as_str() {
                     pagination::SERIAL => quote! {
                         // Generate count SQL from the Statement
                         let count_sql = sqlx_data::build_count_query_from_sql(&sql)?;
-                        
-                        // Build args from same bind values
-                        let count_args = make_args()?;
-                        let total_elements = sqlx::query_scalar_with(&*count_sql, count_args)
+                        let count_args = #count_args_expr;
+                        let total_elements = sqlx::query_scalar_with(sqlx::AssertSqlSafe(count_sql.clone()), count_args)
                             .fetch_one(#pool_expr)
                             .await?;
 
@@ -1468,9 +1509,8 @@ impl PaginatedGenerator {
                         let total_elements = if !params.is_disable_total_count() {
                             // Generate count SQL from the Statement
                             let count_sql = sqlx_data::build_count_query_from_sql(&sql)?;
-
-                            // Build args from same bind values
-                            sqlx::query_scalar_with(&*count_sql, make_args()?)
+                            let count_args = #count_args_expr;
+                            sqlx::query_scalar_with(sqlx::AssertSqlSafe(count_sql.clone()), count_args)
                                 .fetch_one(#pool_expr)
                                 .await?
                         } else {
@@ -1488,9 +1528,8 @@ impl PaginatedGenerator {
                         let total_elements = if !params.is_disable_total_count() {
                             // Generate count SQL from the Statement
                             let count_sql = sqlx_data::build_count_query_from_sql(&sql)?;
-
-                            // Build args from same bind values
-                            sqlx::query_scalar_with(&*count_sql, make_args()?)
+                            let count_args = #count_args_expr;
+                            sqlx::query_scalar_with(sqlx::AssertSqlSafe(count_sql.clone()), count_args)
                                 .fetch_one(#pool_expr)
                                 .await?
                         } else {
@@ -1535,7 +1574,7 @@ impl PaginatedGenerator {
                     // Execute data query using Statement
                     let sql = built_sql.sql.as_ref();
                     let make_args = params.build_arguments(&built_sql.bind_values);
-                    let data = sqlx::query_as_with::<_, #inner_type, _>(&sql, make_args()?)
+                    let data = sqlx::query_as_with::<_, #inner_type, _>(sqlx::AssertSqlSafe(sql.clone()), make_args()?)
                         .fetch_all(#pool_expr)
                         .await?;
 
@@ -1603,13 +1642,34 @@ impl PaginatedGenerator {
                 let initial_binds = MethodSignatureGenerator::generate_initial_binds(method);
 
                 // Generate response creation logic based on pagination type (compile-time optimized)
+                let count_args_expr = {
+                    #[cfg(feature = "mysql")]
+                    {
+                        quote! {
+                            {
+                                let count_placeholder_count = count_sql.matches('?').count();
+                                let count_bind_values: Vec<_> = built_sql
+                                    .bind_values
+                                    .iter()
+                                    .take(count_placeholder_count)
+                                    .cloned()
+                                    .collect();
+                                sqlx_data::FilterValue::build_arguments::<sqlx_data::DB>(&count_bind_values)?
+                            }
+                        }
+                    }
+                    #[cfg(not(feature = "mysql"))]
+                    {
+                        quote! { make_args()? }
+                    }
+                };
+
                 let create_response = match pagination_variant.as_str() {
                     pagination::SERIAL => quote! {
                         // Generate count SQL from the Statement
                         let count_sql = sqlx_data::build_count_query_from_sql(&sql)?;
-
-                        // Serial always needs count - build args from same bind values
-                        let total_elements = sqlx::query_scalar_with(&*count_sql, make_args()?)
+                        let count_args = #count_args_expr;
+                        let total_elements = sqlx::query_scalar_with(sqlx::AssertSqlSafe(count_sql.clone()), count_args)
                             .fetch_one(#pool_expr)
                             .await?;
 
@@ -1620,9 +1680,8 @@ impl PaginatedGenerator {
                         let total_elements = if !params.is_disable_total_count() {
                             // Generate count SQL from the Statement
                             let count_sql = sqlx_data::build_count_query_from_sql(&sql)?;
-
-                            // Build args from same bind values
-                            sqlx::query_scalar_with(&*count_sql, make_args()?)
+                            let count_args = #count_args_expr;
+                            sqlx::query_scalar_with(sqlx::AssertSqlSafe(count_sql.clone()), count_args)
                                 .fetch_one(#pool_expr)
                                 .await?
                         } else {
@@ -1641,9 +1700,8 @@ impl PaginatedGenerator {
                         let total_elements = if !params.is_disable_total_count() {
                             // Generate count SQL from the Statement
                             let count_sql = sqlx_data::build_count_query_from_sql(&sql)?;
-
-                            // Build args from same bind values
-                            sqlx::query_scalar_with(&*count_sql, make_args()?)
+                            let count_args = #count_args_expr;
+                            sqlx::query_scalar_with(sqlx::AssertSqlSafe(count_sql.clone()), count_args)
                                 .fetch_one(#pool_expr)
                                 .await?
                         } else {
@@ -1693,7 +1751,7 @@ impl PaginatedGenerator {
                     // Execute data query using Statement
                     let sql = built_sql.sql.as_ref();
                     let make_args = params.build_arguments(&built_sql.bind_values);
-                    let rows = sqlx::query_as_with::<_, QueryTuple, _>(&sql, make_args()?)
+                    let rows = sqlx::query_as_with::<_, QueryTuple, _>(sqlx::AssertSqlSafe(sql.clone()), make_args()?)
                         .fetch_all(#pool_expr)
                         .await?;
 
@@ -1883,13 +1941,7 @@ fn cast_expr(value: TokenStream, target: &syn::Type) -> TokenStream {
     }
 }
 
-fn option_cast_expr(value: TokenStream, target: &syn::Type, is_tuple: bool) -> TokenStream {
-    let value = if is_tuple {
-        quote! { #value }
-    } else {
-        quote! { #value.flatten() }
-    };
-
+fn option_cast_expr(value: TokenStream, target: &syn::Type, _is_tuple: bool) -> TokenStream {
     if is_bool(target) {
         quote! {
             #value.map(|v| v != 0)

@@ -9,7 +9,7 @@ Create a new Rust project and add the dependencies:
 ```toml
 [dependencies]
 sqlx-data = { version = "0.1.0", features = ["postgres"] }
-sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "migrate"] }
+sqlx = { version = "0.9.0", features = ["postgres", "runtime-tokio", "migrate"] }
 axum = "0.7"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }

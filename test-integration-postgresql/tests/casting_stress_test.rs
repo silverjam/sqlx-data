@@ -105,10 +105,10 @@ trait CastingStressRepo {
     async fn count_with_casting(&self, min_age: i16) -> Result<i16>;
 
     // NULL casting
-    #[dml("SELECT NULL::INTEGER as \"null_int: i32\"")]
+    #[dml("SELECT NULL::INTEGER as \"null_int: Option<i32>\"")]
     async fn cast_null_to_int(&self) -> Result<Option<i32>>;
 
-    #[dml("SELECT NULL::TEXT as \"null_text: String\"")]
+    #[dml("SELECT NULL::TEXT as \"null_text: Option<String>\"")]
     async fn cast_null_to_text(&self) -> Result<Option<String>>;
 
     // COALESCE with casting

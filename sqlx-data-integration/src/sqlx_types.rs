@@ -9,8 +9,8 @@ pub mod database {
     // Core database types
     // ---------------------------------------------------------------------------------------------
     pub type DB = sqlx::Sqlite;
-    pub type DbArguments<'q> = <DB as sqlx::Database>::Arguments<'q>;
-    pub type DbArgumentBuffer<'q> = <DB as sqlx::Database>::ArgumentBuffer<'q>;
+    pub type DbArguments = <DB as sqlx::Database>::Arguments;
+    pub type DbArgumentBuffer = <DB as sqlx::Database>::ArgumentBuffer;
     pub type TypeInfo = <DB as sqlx::Database>::TypeInfo;
     pub type QueryResult = sqlx::sqlite::SqliteQueryResult;
     pub type Connection = sqlx::sqlite::SqliteConnection;
@@ -212,8 +212,8 @@ pub mod database {
 #[cfg(feature = "postgres")]
 pub mod database {
     pub type DB = sqlx::Postgres;
-    pub type DbArguments<'q> = <DB as sqlx::Database>::Arguments<'q>;
-    pub type DbArgumentBuffer<'q> = <DB as sqlx::Database>::ArgumentBuffer<'q>;
+    pub type DbArguments = <DB as sqlx::Database>::Arguments;
+    pub type DbArgumentBuffer = <DB as sqlx::Database>::ArgumentBuffer;
     pub type TypeInfo = <DB as sqlx::Database>::TypeInfo;
     pub type QueryResult = sqlx::postgres::PgQueryResult;
     pub type Connection = sqlx::postgres::PgConnection;
@@ -398,8 +398,8 @@ pub mod database {
 #[cfg(feature = "mysql")]
 pub mod database {
     pub type DB = sqlx::MySql;
-    pub type DbArguments<'q> = <DB as sqlx::Database>::Arguments<'q>;
-    pub type DbArgumentBuffer<'q> = <DB as sqlx::Database>::ArgumentBuffer<'q>;
+    pub type DbArguments = <DB as sqlx::Database>::Arguments;
+    pub type DbArgumentBuffer = <DB as sqlx::Database>::ArgumentBuffer;
     pub type TypeInfo = <DB as sqlx::Database>::TypeInfo;
     pub type QueryResult = sqlx::mysql::MySqlQueryResult;
     pub type Connection = sqlx::mysql::MySqlConnection;

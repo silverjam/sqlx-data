@@ -22,7 +22,7 @@ let pool: Pool = Pool::connect("sqlite::memory:").await?;
 
 ## SQLx Compatibility
 
-Compatible with SQLx 0.8+ and provides additional abstractions for:
+Compatible with SQLx 0.9.x and provides additional abstractions for:
 
 - Transaction handling
 - Connection management

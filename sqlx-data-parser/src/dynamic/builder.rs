@@ -21,12 +21,30 @@ pub fn build_dynamic_sql(
     params: &sqlx_data_params::Params,
     initial_binds: Vec<FilterValue>,
 ) -> Result<BuiltSql> {
-    let mut bind_values: Vec<FilterValue> = Vec::new();
-
-    // Add initial binds
-    bind_values.extend(initial_binds);
-
     let statement_opt = crate::parse_sql(base_sql)?;
+
+    let (mut bind_values, original_placeholder_numbers, max_existing_placeholder) =
+        if let Some(statement_arc) = &statement_opt {
+            let mut binds = initial_binds;
+            let mut placeholder_numbers = Vec::new();
+            let mut max_placeholder = 0usize;
+            if let Statement::Query(query) = statement_arc.as_ref() {
+                let ignore_limit_offset = params.limit.is_some() || params.offset.is_some();
+                let mut trimmed_positions = Vec::new();
+                if ignore_limit_offset {
+                    trimmed_positions =
+                        trim_limit_offset_placeholder_binds(query.as_ref(), &mut binds);
+                }
+                placeholder_numbers = collect_numbered_placeholders(base_sql);
+                if ignore_limit_offset {
+                    placeholder_numbers.retain(|n| !trimmed_positions.contains(n));
+                }
+                max_placeholder = placeholder_numbers.iter().copied().max().unwrap_or(0);
+            }
+            (binds, placeholder_numbers, max_placeholder)
+        } else {
+            (initial_binds, Vec::new(), 0)
+        };
 
     let statement_arc = statement_opt.ok_or(SqlxError::protocol(format!(
         "Failed to parse SQL: `{}`",
@@ -34,8 +52,14 @@ pub fn build_dynamic_sql(
     )))?;
 
     if params.is_empty() {
+        let (sql, bind_values) = renumber_numbered_placeholders_with_binds(
+            &statement_arc.to_string(),
+            &bind_values,
+            &original_placeholder_numbers,
+            max_existing_placeholder,
+        );
         return Ok(BuiltSql {
-            sql: Arc::new(statement_arc.to_string()),
+            sql: Arc::new(sql),
             bind_values,
         });
     }
@@ -45,9 +69,15 @@ pub fn build_dynamic_sql(
     // Handle both SELECT and INSERT statements
     match &mut statement {
         Statement::Query(query) => {
-            process_query(query, params, &mut bind_values)?;
+            process_query(query, params, &mut bind_values, max_existing_placeholder)?;
+            let (sql, bind_values) = renumber_numbered_placeholders_with_binds(
+                &statement.to_string(),
+                &bind_values,
+                &original_placeholder_numbers,
+                max_existing_placeholder,
+            );
             Ok(BuiltSql {
-                sql: Arc::new(statement.to_string()),
+                sql: Arc::new(sql),
                 bind_values,
             })
         }
@@ -57,12 +87,189 @@ pub fn build_dynamic_sql(
     }
 }
 
+fn trim_limit_offset_placeholder_binds(
+    query: &Query,
+    bind_values: &mut Vec<FilterValue>,
+) -> Vec<usize> {
+    let Some(limit_clause) = &query.limit_clause else {
+        return Vec::new();
+    };
+
+    fn placeholder_index(expr: &Expr) -> Option<Option<usize>> {
+        let Expr::Value(v) = expr else {
+            return None;
+        };
+        let Value::Placeholder(ph) = &v.value else {
+            return None;
+        };
+
+        if ph == "?" {
+            Some(None)
+        } else if let Some(number) = ph.strip_prefix('$') {
+            number.parse::<usize>().ok().map(Some)
+        } else {
+            Some(None)
+        }
+    }
+
+    let mut placeholder_count = 0usize;
+    let mut numbered_positions: Vec<usize> = Vec::new();
+
+    match limit_clause {
+        LimitClause::LimitOffset { limit, offset, .. } => {
+            if let Some(limit) = limit
+                && let Some(index) = placeholder_index(limit)
+            {
+                placeholder_count += 1;
+                if let Some(index) = index {
+                    numbered_positions.push(index);
+                }
+            }
+            if let Some(offset) = offset
+                && let Some(index) = placeholder_index(&offset.value)
+            {
+                placeholder_count += 1;
+                if let Some(index) = index {
+                    numbered_positions.push(index);
+                }
+            }
+        }
+        LimitClause::OffsetCommaLimit { offset, limit } => {
+            if let Some(index) = placeholder_index(offset) {
+                placeholder_count += 1;
+                if let Some(index) = index {
+                    numbered_positions.push(index);
+                }
+            }
+            if let Some(index) = placeholder_index(limit) {
+                placeholder_count += 1;
+                if let Some(index) = index {
+                    numbered_positions.push(index);
+                }
+            }
+        }
+    }
+
+    if !numbered_positions.is_empty() {
+        numbered_positions.sort_unstable_by(|a, b| b.cmp(a));
+        for index in &numbered_positions {
+            let zero_based = index.saturating_sub(1);
+            if zero_based < bind_values.len() {
+                bind_values.remove(zero_based);
+            }
+        }
+    } else {
+        for _ in 0..placeholder_count {
+            let _ = bind_values.pop();
+        }
+    }
+
+    numbered_positions
+}
+
+fn collect_numbered_placeholders(sql: &str) -> Vec<usize> {
+    let chars: Vec<char> = sql.chars().collect();
+    let mut i = 0usize;
+    let mut ordered = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+
+    while i < chars.len() {
+        if chars[i] == '$' {
+            let start = i + 1;
+            let mut j = start;
+            while j < chars.len() && chars[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > start
+                && let Ok(index) = chars[start..j].iter().collect::<String>().parse::<usize>()
+                && seen.insert(index)
+            {
+                ordered.push(index);
+                i = j;
+                continue;
+            }
+        }
+        i += 1;
+    }
+
+    ordered
+}
+
+fn renumber_numbered_placeholders_with_binds(
+    sql: &str,
+    bind_values: &[FilterValue],
+    original_placeholder_numbers: &[usize],
+    max_existing_placeholder: usize,
+) -> (String, Vec<FilterValue>) {
+    let mut next_index = 1usize;
+    let mut out = String::with_capacity(sql.len());
+    let chars: Vec<char> = sql.chars().collect();
+    let mut i = 0usize;
+    let mut old_to_new = std::collections::BTreeMap::<usize, usize>::new();
+    let mut reordered_bind_values = Vec::new();
+
+    while i < chars.len() {
+        if chars[i] == '$' {
+            let start = i + 1;
+            let mut j = start;
+            while j < chars.len() && chars[j].is_ascii_digit() {
+                j += 1;
+            }
+
+            if j > start
+                && let Ok(old_index) = chars[start..j].iter().collect::<String>().parse::<usize>()
+            {
+                let new_index = *old_to_new.entry(old_index).or_insert_with(|| {
+                    let idx = next_index;
+                    next_index += 1;
+
+                    let bind_position = if let Some(pos) = original_placeholder_numbers
+                        .iter()
+                        .position(|n| *n == old_index)
+                    {
+                        pos
+                    } else if old_index > max_existing_placeholder {
+                        original_placeholder_numbers.len()
+                            + (old_index - (max_existing_placeholder + 1))
+                    } else {
+                        usize::MAX
+                    };
+
+                    if bind_position < bind_values.len() {
+                        reordered_bind_values.push(bind_values[bind_position].clone());
+                    }
+                    idx
+                });
+                out.push('$');
+                out.push_str(&new_index.to_string());
+                i = j;
+                continue;
+            }
+        }
+
+        out.push(chars[i]);
+        i += 1;
+    }
+
+    if reordered_bind_values.is_empty() {
+        (sql.to_string(), bind_values.to_vec())
+    } else {
+        (out, reordered_bind_values)
+    }
+}
+
 fn process_query(
     query: &mut Box<Query>,
     params: &sqlx_data_params::Params,
     bind_values: &mut Vec<FilterValue>,
+    max_existing_placeholder: usize,
 ) -> Result<()> {
-    let mut next_placeholder = make_generator(bind_values.len() as u8);
+    let start_index = if max_existing_placeholder > 0 {
+        max_existing_placeholder as u8
+    } else {
+        bind_values.len() as u8
+    };
+    let mut next_placeholder = make_generator(start_index);
     let mut bind = |v: &FilterValue| {
         bind_values.push(v.clone());
         Ok(value_expr(Value::Placeholder(next_placeholder())))
